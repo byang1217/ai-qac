@@ -325,6 +325,16 @@
         <div id="settingsView" class="hidden settings-page">
             <h2>系统设置</h2>
             <div class="form-group">
+                <label>API 模型：</label>
+                <select id="apiModel" class="form-control" onchange="updateApiUrlBasedOnModel(this.value)">
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (OpenAI)</option>
+                    <option value="gpt-4">GPT-4 (OpenAI)</option>
+                    <option value="deepseek-chat">DeepSeek Chat</option>
+                    <option value="qwen-max">Qwen Max (阿里云)</option>
+                    <option value="custom">自定义</option>
+                </select>
+            </div>
+            <div class="form-group">
                 <label>API 地址：</label>
                 <input type="text" id="apiUrl" class="form-control" placeholder="请输入 OpenAI API 地址">
             </div>
@@ -750,6 +760,22 @@ function checkAnswer(qId) {
         hint.textContent = '✓ 回答正确！';
         hint.style.color = 'green';
         input.disabled = true;
+
+        // 显示正确答案和思考过程
+        const container = document.getElementById(`q${qId}`);
+        const answerDiv = document.createElement('div');
+        answerDiv.className = 'correct-answer';
+        answerDiv.innerHTML = `正确答案: ${question.answer}`;
+        container.appendChild(answerDiv);
+        
+        if (question.thinking) {
+            const thinkingDiv = document.createElement('details');
+            thinkingDiv.innerHTML = `
+                <summary>思考过程</summary>
+                <div class="thinking-process">${question.thinking}</div>
+            `;
+            container.appendChild(thinkingDiv);
+        }
     } else {
         if(attemptCounts[qId] >= 2) {
             hint.textContent = '✗ 答案不正确，已锁定';
@@ -908,20 +934,57 @@ function refreshTask(dateKey) {
     }
 }
 
+function updateApiUrlBasedOnModel(model) {
+    const urlField = document.getElementById('apiUrl');
+    const currentUrl = urlField.value;
+    
+    // 如果用户已经手动填写了URL，且不是选择了新的模型，则不修改
+    if (currentUrl && model === document.getElementById('apiModel').dataset.lastModel) {
+        return;
+    }
+    
+    // 保存当前选择的模型，用于检测是否是用户手动修改
+    document.getElementById('apiModel').dataset.lastModel = model;
+    
+    // 根据模型更新URL
+    switch(model) {
+        case 'gpt-3.5-turbo':
+            urlField.value = 'https://api.openai.com/v1/chat/completions';
+            break;
+        case 'gpt-4':
+            urlField.value = 'https://api.openai.com/v1/chat/completions';
+            break;
+        case 'deepseek-chat':
+            urlField.value = 'https://api.deepseek.com/v1/chat/completions';
+            break;
+        case 'qwen-max':
+            urlField.value = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+            break;
+        default:
+            // 如果是自定义模型，不自动填充URL
+            break;
+    }
+}
+
 function loadSettings() {
     logger.log('加载设置');
     const settings = storage.get('system_settings') || {};
     
+    document.getElementById('apiModel').value = settings.apiModel || 'gpt-3.5-turbo';
     document.getElementById('apiUrl').value = settings.apiUrl || '';
     document.getElementById('apiKey').value = settings.apiKey || '';
     document.getElementById('apiPrompt').value = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
     document.getElementById('debugMode').checked = settings.debugMode || false;
+    
+    // 根据选择的模型自动填充URL
+    updateApiUrlBasedOnModel(settings.apiModel);
 }
 
 function saveSettings() {
     logger.log('保存设置');
     
     const settings = {
+        apiModel: document.getElementById('apiModel').value,
         apiUrl: document.getElementById('apiUrl').value,
         apiKey: document.getElementById('apiKey').value,
         apiPrompt: document.getElementById('apiPrompt').value,
@@ -970,17 +1033,37 @@ async function fetchQuestions(date) {
     }
     
     try {
-        // 构建OpenAI API请求
+        // 构建API请求
         const prompt = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
+        const model = settings.apiModel || 'gpt-3.5-turbo';
         
-        const response = await fetch(settings.apiUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${settings.apiKey}`
-            },
-            body: JSON.stringify({
-                model: "gpt-3.5-turbo",
+        // 根据不同的模型构建不同的请求
+        let requestBody;
+        
+        if (model.startsWith('qwen')) {
+            // 阿里云千问模型请求格式
+            requestBody = JSON.stringify({
+                model: model,
+                input: {
+                    messages: [
+                        {
+                            role: "system",
+                            content: "你是一个教育助手，擅长出题。"
+                        },
+                        {
+                            role: "user",
+                            content: `日期: ${formatDateKey(date)}\n${prompt}`
+                        }
+                    ]
+                },
+                parameters: {
+                    temperature: 0.7
+                }
+            });
+        } else {
+            // OpenAI 和 DeepSeek 模型请求格式
+            requestBody = JSON.stringify({
+                model: model,
                 messages: [
                     {
                         role: "system",
@@ -992,7 +1075,16 @@ async function fetchQuestions(date) {
                     }
                 ],
                 temperature: 0.7
-            })
+            });
+        }
+        
+        const response = await fetch(settings.apiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${settings.apiKey}`
+            },
+            body: requestBody
         });
         
         if (!response.ok) {
@@ -1000,7 +1092,14 @@ async function fetchQuestions(date) {
         }
         
         const data = await response.json();
-        const content = data.choices[0].message.content;
+        
+        // 解析不同模型返回的数据格式
+        let content;
+        if (model.startsWith('qwen')) {
+            content = data.output.text;
+        } else {
+            content = data.choices[0].message.content;
+        }
         
         // 解析返回的内容，转换为题目格式
         const questions = parseQuestions(content);
