@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI出题打卡</title>
+    <link rel="stylesheet" href="qac.css">
+</head>
+<body>
+    <div class="global-header">
+        <div class="stats" id="completedCount">0</div>
+        <div class="nav-buttons">
+            <button class="nav-button" onclick="showView('calendar')">日历</button>
+            <button class="nav-button" onclick="showView('tasks')">任务</button>
+            <button class="nav-button" onclick="showView('settings')">设置</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- 日历视图 -->
+        <div id="calendarView">
+            <div class="calendar-container">
+                <div class="calendar-header">
+                    <button class="nav-button" onclick="changeMonth(-1)">←</button>
+                    <h2 id="currentMonth"></h2>
+                    <button class="nav-button" onclick="changeMonth(1)">→</button>
+                </div>
+                <div class="calendar-grid" id="calendar"></div>
+            </div>
+        </div>
+
+        <!-- 任务列表视图 -->
+        <div id="tasksView" class="hidden">
+            <div class="task-list" id="taskList"></div>
+        </div>
+
+        <!-- 设置视图 -->
+        <div id="settingsView" class="hidden settings-page">
+            <h2>系统设置</h2>
+            <div class="form-group">
+                <label>API 地址：</label>
+                <input type="text" id="apiUrl" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>API 密钥：</label>
+                <input type="text" id="apiKey" class="form-control">
+            </div>
+            <button class="nav-button" onclick="saveSettings()">保存设置</button>
+            <h3 style="margin-top:20px;">数据同步</h3>
+            <button class="nav-button" onclick="uploadData()">上传数据</button>
+            <button class="nav-button" onclick="downloadData()">下载数据</button>
+        </div>
+
+        <!-- 任务详情页 -->
+        <div id="taskDetailView" class="hidden">
+            <div style="margin-bottom:20px;">
+                <button class="nav-button" onclick="hideTask()">← 返回</button>
+                <h2 style="margin-top:10px;" id="taskDate"></h2>
+            </div>
+            <div id="questionsContainer"></div>
+            <button id="submitBtn" class="nav-button" style="margin-top:20px;" onclick="submitAnswers()">提交答案</button>
+        </div>
+    </div>
+
+    <script src="qac.js"></script>
+</body>
+</html>
