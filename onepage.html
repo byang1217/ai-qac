@@ -266,6 +266,40 @@
             overflow-y: auto;
         }
 
+        /* 加载指示器样式 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        .loading-text {
+            margin-top: 15px;
+            color: white;
+            font-size: 1.2em;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         @media (max-width: 768px) {
             .global-header {
                 flex-direction: column;
@@ -292,6 +326,7 @@
 <body>
     <div class="global-header">
         <div class="stats" id="completedCount">0</div>
+        <button id="syncButton" class="nav-button" style="display:none;" onclick="syncData()">同步数据</button>
         <div class="nav-buttons">
             <button class="nav-button" onclick="showView('calendar')">日历</button>
             <button class="nav-button" onclick="showView('tasks')">任务</button>
@@ -322,43 +357,58 @@
         </div>
 
         <!-- 设置视图 -->
-        <div id="settingsView" class="hidden settings-page">
-            <h2>系统设置</h2>
-            <div class="form-group">
-                <label>API 模型：</label>
-                <select id="apiModel" class="form-control" onchange="updateApiUrlBasedOnModel(this.value)">
-                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (OpenAI)</option>
-                    <option value="gpt-4">GPT-4 (OpenAI)</option>
-                    <option value="deepseek-chat">DeepSeek Chat</option>
-                    <option value="qwen-max">Qwen Max (阿里云)</option>
-                    <option value="custom">自定义</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>API 地址：</label>
-                <input type="text" id="apiUrl" class="form-control" placeholder="请输入 OpenAI API 地址">
-            </div>
-            <div class="form-group">
-                <label>API 密钥：</label>
-                <input type="password" id="apiKey" class="form-control" placeholder="请输入 API 密钥">
-            </div>
-            <div class="form-group">
-                <label>Prompt 提示词：</label>
-                <textarea id="apiPrompt" class="form-control" rows="4" placeholder="请输入生成题目的提示词"></textarea>
-            </div>
-            <div class="form-group">
-                <label>Debug 模式：</label>
-                <input type="checkbox" id="debugMode">
-            </div>
-            <button class="nav-button" onclick="saveSettings()">保存设置</button>
-            
-            <h3 style="margin-top:20px;">数据管理</h3>
-            <button class="nav-button" onclick="downloadData()">下载数据</button>
-            <button class="nav-button" onclick="uploadData()">恢复数据</button>
-            <input type="file" id="uploadFile" style="display:none" accept=".json" onchange="handleFileUpload()">
-            
-            <div id="logPanel" class="debug-info hidden"></div>
-        </div>
+		<div id="settingsView" class="hidden settings-page">
+			<div id="passwordProtection">
+				<h3>访问设置</h3>
+				<div class="form-group">
+					<label>密码：</label>
+					<input type="password" id="settingsPassword" class="form-control">
+				</div>
+				<button class="nav-button" onclick="verifyPassword()">验证</button>
+			</div>
+			
+			<div id="settingsContent" class="hidden">
+				<h2>系统设置</h2>
+				<div class="form-group">
+					<label>API 模型：</label>
+					<select id="apiModel" class="form-control" onchange="updateApiUrlBasedOnModel(this.value)">
+						<option value="gpt-3.5-turbo">GPT-3.5 Turbo (OpenAI)</option>
+						<option value="gpt-4">GPT-4 (OpenAI)</option>
+						<option value="deepseek-chat">DeepSeek Chat</option>
+						<option value="qwen-max">Qwen Max (阿里云)</option>
+						<option value="custom">自定义</option>
+					</select>
+				</div>
+				<div class="form-group">
+					<label>API 地址：</label>
+					<input type="text" id="apiUrl" class="form-control" placeholder="请输入 OpenAI API 地址">
+				</div>
+				<div class="form-group">
+					<label>API 密钥：</label>
+					<input type="password" id="apiKey" class="form-control" placeholder="请输入 API 密钥">
+				</div>
+				<div class="form-group">
+					<label>Prompt 提示词：</label>
+					<textarea id="apiPrompt" class="form-control" rows="4" placeholder="请输入生成题目的提示词"></textarea>
+				</div>
+				<div class="form-group">
+					<label>数据同步 URL：</label>
+					<input type="text" id="syncUrl" class="form-control" placeholder="请输入数据同步服务器地址">
+				</div>
+				<div class="form-group">
+					<label>Debug 模式：</label>
+					<input type="checkbox" id="debugMode">
+				</div>
+				<button class="nav-button" onclick="saveSettings()">保存设置</button>
+				
+				<h3 style="margin-top:20px;">数据管理</h3>
+				<button class="nav-button" onclick="downloadData()">下载数据</button>
+				<button class="nav-button" onclick="uploadData()">恢复数据</button>
+				<input type="file" id="uploadFile" style="display:none" accept=".json" onchange="handleFileUpload()">
+				
+				<div id="logPanel" class="debug-info hidden"></div>
+			</div>
+		</div>
 
         <!-- 任务详情页 -->
         <div id="taskDetailView" class="hidden">
@@ -368,6 +418,12 @@
             </div>
             <div id="questionsContainer"></div>
             <button id="submitBtn" class="nav-button" style="margin-top:20px;" onclick="submitAnswers()">提交答案</button>
+        </div>
+
+        <!-- 加载指示器 -->
+        <div id="loadingIndicator" class="loading-overlay hidden">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">正在加载题目...</div>
         </div>
     </div>
 
@@ -455,13 +511,24 @@ function cleanupOldData() {
         }))
         .sort((a, b) => a.date - b.date); // 按日期从旧到新排序
     
-    // 保留1/3的最新记录，其余简化
-    const keepFullCount = Math.ceil(taskDates.length / 3);
+    const now = new Date();
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(now.getFullYear() - 1);
     
-    taskDates.slice(0, -keepFullCount).forEach(task => {
+    // 一年内的旧任务保留简化数据，一年前的任务删除
+    taskDates.forEach(task => {
         const data = storage.get(task.key);
-        if (data && data.submitted) {
-            // 只保留完成状态和得分
+        if (!data) return;
+        
+        if (task.date < oneYearAgo) {
+            // 超过一年的任务，删除数据但保留任务完成状态
+            if (data.submitted) {
+                storage.set('completed_count', (storage.get('completed_count') || 0) + 1);
+                storage.remove(task.key);
+                logger.log(`已删除超过一年的任务数据: ${task.key}`);
+            }
+        } else if (data.submitted && !data.simplified) {
+            // 一年内的已完成任务，简化数据
             const simplifiedData = {
                 submitted: true,
                 correctCount: data.correctCount,
@@ -472,6 +539,9 @@ function cleanupOldData() {
             logger.log(`已简化数据: ${task.key}`);
         }
     });
+    
+    // 更新统计数据
+    updateStats();
 }
 
 // 系统状态
@@ -503,6 +573,13 @@ function init() {
         logger.log(`创建今日任务: ${todayKey}`);
     }
     
+    // 显示/隐藏同步按钮
+    if (settings.syncUrl) {
+        document.getElementById('syncButton').style.display = 'block';
+    } else {
+        document.getElementById('syncButton').style.display = 'none';
+    }
+    
     loadSettings();
     setupWeekdayLabels();
     generateCalendar();
@@ -517,13 +594,16 @@ function formatDateKey(date) {
 
 function showView(viewName) {
     logger.log(`切换视图: ${viewName}`);
+    
+    if (viewName === 'settings') {
+        showSettingsWithPasswordCheck();
+        return;
+    }
+    
     document.querySelectorAll('.main-container > div').forEach(el => el.classList.add('hidden'));
     document.getElementById(viewName+'View').classList.remove('hidden');
     
     if(viewName === 'tasks') refreshTaskList();
-    if(viewName === 'settings' && debugMode) {
-        document.getElementById('logPanel').classList.remove('hidden');
-    }
 }
 
 function setupWeekdayLabels() {
@@ -816,6 +896,13 @@ function submitAnswers() {
         return;
     }
     
+    // 检查所有问题是否已回答
+    const unansweredQuestions = currentQuestions.filter(q => !answerAttempts[q.id]);
+    if (unansweredQuestions.length > 0) {
+        alert(`还有 ${unansweredQuestions.length} 道题目未完成，请完成所有题目后再提交。`);
+        return;
+    }
+    
     const results = {};
     let correctCount = 0;
     
@@ -836,6 +923,7 @@ function submitAnswers() {
         submitted: true,
         correctCount,
         totalQuestions: currentQuestions.length,
+        questions: currentQuestions, // 保存题目
         answers: results,
         submitTime: new Date().toISOString()
     };
@@ -966,6 +1054,58 @@ function updateApiUrlBasedOnModel(model) {
     }
 }
 
+// 密码验证功能
+function verifyPassword() {
+    const settingsPassword = document.getElementById('settingsPassword').value;
+    const storedPassword = storage.get('settings_password');
+    
+    // 如果没有设置密码，则设置新密码
+    if (!storedPassword) {
+        if (settingsPassword.trim() === '') {
+            alert('请设置一个访问密码');
+            return;
+        }
+        
+        storage.set('settings_password', settingsPassword);
+        document.getElementById('passwordProtection').classList.add('hidden');
+        document.getElementById('settingsContent').classList.remove('hidden');
+        logger.log('设置了新的访问密码');
+        return;
+    }
+    
+    // 验证密码
+    if (settingsPassword === storedPassword) {
+        document.getElementById('passwordProtection').classList.add('hidden');
+        document.getElementById('settingsContent').classList.remove('hidden');
+        logger.log('密码验证成功');
+    } else {
+        alert('密码不正确');
+        logger.log('密码验证失败');
+    }
+}
+
+// 显示设置页面前检查密码
+function showSettingsWithPasswordCheck() {
+    document.querySelectorAll('.main-container > div').forEach(el => el.classList.add('hidden'));
+    document.getElementById('settingsView').classList.remove('hidden');
+    
+    const storedPassword = storage.get('settings_password');
+    if (storedPassword) {
+        // 已设置密码，需要验证
+        document.getElementById('passwordProtection').classList.remove('hidden');
+        document.getElementById('settingsContent').classList.add('hidden');
+        document.getElementById('settingsPassword').value = '';
+    } else {
+        // 首次使用，设置密码
+        document.getElementById('passwordProtection').classList.remove('hidden');
+        document.getElementById('settingsContent').classList.add('hidden');
+    }
+    
+    if (debugMode) {
+        document.getElementById('logPanel').classList.remove('hidden');
+    }
+}
+
 function loadSettings() {
     logger.log('加载设置');
     const settings = storage.get('system_settings') || {};
@@ -974,10 +1114,18 @@ function loadSettings() {
     document.getElementById('apiUrl').value = settings.apiUrl || '';
     document.getElementById('apiKey').value = settings.apiKey || '';
     document.getElementById('apiPrompt').value = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
+    document.getElementById('syncUrl').value = settings.syncUrl || '';
     document.getElementById('debugMode').checked = settings.debugMode || false;
     
     // 根据选择的模型自动填充URL
     updateApiUrlBasedOnModel(settings.apiModel);
+    
+    // 显示/隐藏同步按钮
+    if (settings.syncUrl) {
+        document.getElementById('syncButton').style.display = 'block';
+    } else {
+        document.getElementById('syncButton').style.display = 'none';
+    }
 }
 
 function saveSettings() {
@@ -988,6 +1136,7 @@ function saveSettings() {
         apiUrl: document.getElementById('apiUrl').value,
         apiKey: document.getElementById('apiKey').value,
         apiPrompt: document.getElementById('apiPrompt').value,
+        syncUrl: document.getElementById('syncUrl').value,
         debugMode: document.getElementById('debugMode').checked
     };
     
@@ -1000,18 +1149,41 @@ function saveSettings() {
         document.getElementById('logPanel').classList.add('hidden');
     }
     
+    // 显示/隐藏同步按钮
+    if (settings.syncUrl) {
+        document.getElementById('syncButton').style.display = 'block';
+    } else {
+        document.getElementById('syncButton').style.display = 'none';
+    }
+    
     alert('设置已保存');
 }
 
 function updateStats() {
     logger.log('更新统计数据');
-    const completed = Object.keys(localStorage)
+    const savedCompletedCount = storage.get('completed_count') || 0;
+    
+    const currentCompletedCount = Object.keys(localStorage)
         .filter(k => k.match(/^\d{4}-\d{2}-\d{2}$/))
         .map(k => storage.get(k))
         .filter(data => data && data.submitted)
         .length;
     
-    document.getElementById('completedCount').textContent = completed;
+    const totalCompleted = savedCompletedCount + currentCompletedCount;
+    document.getElementById('completedCount').textContent = totalCompleted;
+}
+
+// 显示/隐藏加载指示器
+function toggleLoading(show, message = '正在加载题目...') {
+    const loader = document.getElementById('loadingIndicator');
+    const loadingText = document.querySelector('.loading-text');
+    
+    if (show) {
+        loadingText.textContent = message;
+        loader.classList.remove('hidden');
+    } else {
+        loader.classList.add('hidden');
+    }
 }
 
 async function fetchQuestions(date) {
@@ -1033,6 +1205,9 @@ async function fetchQuestions(date) {
     }
     
     try {
+        // 显示加载指示器
+        toggleLoading(true, '正在从API获取题目...');
+        
         // 构建API请求
         const prompt = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
         const model = settings.apiModel || 'gpt-3.5-turbo';
@@ -1110,9 +1285,14 @@ async function fetchQuestions(date) {
         record.totalQuestions = questions.length;
         storage.set(dateKey, record);
         
+        // 隐藏加载指示器
+        toggleLoading(false);
+        
         return questions;
     } catch (e) {
         logger.log(`API请求失败: ${e.message}`);
+        // 隐藏加载指示器
+        toggleLoading(false);
         return getDefaultQuestions(date);
     }
 }
@@ -1344,6 +1524,89 @@ function handleFileUpload() {
     // 重置文件输入
     fileInput.value = '';
 }
+
+// 添加数据同步功能
+async function syncData() {
+    logger.log('开始同步数据');
+    const settings = storage.get('system_settings') || {};
+    
+    if (!settings.syncUrl) {
+        alert('请先在设置中配置数据同步 URL');
+        return;
+    }
+    
+    try {
+        toggleLoading(true, '正在同步数据...');
+        
+        // 收集所有任务数据
+        const data = {};
+        Object.keys(localStorage).forEach(key => {
+            if (key !== 'settings_password') { // 不同步密码
+                data[key] = storage.get(key);
+            }
+        });
+        
+        // 添加设备标识和时间戳
+        const syncData = {
+            deviceId: getDeviceId(),
+            timestamp: new Date().toISOString(),
+            data: data
+        };
+        
+        // 发送同步请求
+        const response = await fetch(settings.syncUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(syncData)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`同步失败: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // 如果服务器返回了更新的数据，则更新本地存储
+            if (result.updatedData) {
+                Object.keys(result.updatedData).forEach(key => {
+                    if (key !== 'settings_password') { // 不同步密码
+                        storage.set(key, result.updatedData[key]);
+                    }
+                });
+            }
+            
+            alert('数据同步成功');
+            // 更新页面显示
+            updateStats();
+            generateCalendar();
+            
+            if (document.getElementById('tasksView').classList.contains('hidden') === false) {
+                refreshTaskList();
+            }
+        } else {
+            throw new Error(result.message || '同步失败');
+        }
+    } catch (e) {
+        logger.log(`同步数据失败: ${e.message}`);
+        alert(`同步失败: ${e.message}`);
+    } finally {
+        toggleLoading(false);
+    }
+}
+
+// 获取设备唯一标识
+function getDeviceId() {
+    let deviceId = storage.get('device_id');
+    if (!deviceId) {
+        deviceId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 15);
+        storage.set('device_id', deviceId);
+    }
+    return deviceId;
+}
+
 
 // 初始化应用
 window.onload = init;
