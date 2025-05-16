@@ -618,8 +618,11 @@ function updateApiUrlBasedOnModel(model) {
         case 'qwen-max':
             urlField.value = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
             break;
-        default:
+        case 'custom':
             // 如果是自定义模型，不自动填充URL
+            break;
+        default:
+            // 其他情况不修改URL
             break;
     }
 }
@@ -806,7 +809,7 @@ async function fetchQuestions(date) {
                 }
             });
         } else {
-            // OpenAI 和 DeepSeek 模型请求格式
+            // OpenAI、DeepSeek等模型请求格式
             requestBody = JSON.stringify({
                 model: model,
                 messages: [
@@ -823,12 +826,22 @@ async function fetchQuestions(date) {
             });
         }
         
+        // 添加不同模型的认证头
+        let headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        if (model.startsWith('qwen')) {
+            headers['Authorization'] = `Bearer ${settings.apiKey}`;
+        } else if (model.startsWith('deepseek')) {
+            headers['Authorization'] = `Bearer ${settings.apiKey}`;
+        } else {
+            headers['Authorization'] = `Bearer ${settings.apiKey}`;
+        }
+        
         const response = await fetch(settings.apiUrl, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${settings.apiKey}`
-            },
+            headers: headers,
             body: requestBody
         });
         
@@ -863,6 +876,7 @@ async function fetchQuestions(date) {
         logger.log(`API请求失败: ${e.message}`);
         // 隐藏加载指示器
         toggleLoading(false);
+        // 出错时使用默认题目
         return getDefaultQuestions(date);
     }
 }
@@ -1108,7 +1122,7 @@ async function syncData() {
     try {
         toggleLoading(true, '正在同步数据...');
         
-        // 收集所有任务数据
+        // 收集所有任务数据，除了密码
         const data = {};
         Object.keys(localStorage).forEach(key => {
             if (key !== 'settings_password') { // 不同步密码
@@ -1140,18 +1154,25 @@ async function syncData() {
         
         if (result.success) {
             // 如果服务器返回了更新的数据，则更新本地存储
-            if (result.updatedData) {
-                Object.keys(result.updatedData).forEach(key => {
-                    if (key !== 'settings_password') { // 不同步密码
-                        storage.set(key, result.updatedData[key]);
+            if (result.data) {
+                Object.keys(result.data).forEach(key => {
+                    // 更新本地存储，但不更新密码
+                    if (key !== 'settings_password' || !storage.get('settings_password')) {
+                        storage.set(key, result.data[key]);
                     }
                 });
+                
+                // 如果服务器返回了密码，并且本地没有密码，则设置密码
+                if (result.password && !storage.get('settings_password')) {
+                    storage.set('settings_password', result.password);
+                }
             }
             
             alert('数据同步成功');
             // 更新页面显示
             updateStats();
             generateCalendar();
+            loadSettings();
             
             if (document.getElementById('tasksView').classList.contains('hidden') === false) {
                 refreshTaskList();

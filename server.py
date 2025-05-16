@@ -1,168 +1,188 @@
-from flask import Flask, request, jsonify
-import json
 import os
-import shutil
+import json
+import time
 from datetime import datetime
-import logging
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)  # 允许跨域请求
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='sync_server.log'
-)
-logger = logging.getLogger('sync_server')
+# 数据文件和备份目录
+DATA_DIR = "data"
+BACKUP_DIR = "backup"
 
-# 数据目录
-DATA_DIR = 'data'
-BACKUP_DIR = 'backups'
-
-# 确保数据和备份目录存在
+# 确保目录存在
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-# 同步密码，实际使用中应该从配置文件或环境变量中获取
-SYNC_PASSWORD = "your_secure_password"
+# 主数据文件路径
+DATA_FILE = os.path.join(DATA_DIR, "synced_data.json")
 
+# 用于日志记录
+def log_message(message):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
+# 创建当日备份
 def backup_data():
-    """备份当前数据"""
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = f"{BACKUP_DIR}/backup_{timestamp}.json"
-        
-        # 如果主数据文件存在，进行备份
-        if os.path.exists(f"{DATA_DIR}/app_data.json"):
-            shutil.copy2(f"{DATA_DIR}/app_data.json", backup_file)
-            logger.info(f"数据已备份到 {backup_file}")
-            return True
-        else:
-            logger.info("没有数据需要备份")
-            return False
-    except Exception as e:
-        logger.error(f"备份失败: {str(e)}")
-        return False
+    if not os.path.exists(DATA_FILE):
+        return
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    backup_file = os.path.join(BACKUP_DIR, f"backup_{today}.json")
+    
+    # 如果当天还没有备份，创建备份
+    if not os.path.exists(backup_file):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as src:
+                data = src.read()
+            with open(backup_file, 'w', encoding='utf-8') as dest:
+                dest.write(data)
+            log_message(f"数据已备份到 {backup_file}")
+        except Exception as e:
+            log_message(f"备份失败: {str(e)}")
+    else:
+        log_message(f"今日已有备份 {backup_file}")
 
-def read_data():
-    """读取当前数据"""
-    try:
-        if os.path.exists(f"{DATA_DIR}/app_data.json"):
-            with open(f"{DATA_DIR}/app_data.json", 'r', encoding='utf-8') as f:
+# 加载现有数据
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        return {}
-    except Exception as e:
-        logger.error(f"读取数据失败: {str(e)}")
-        return {}
+        except json.JSONDecodeError:
+            log_message("数据文件损坏，创建新的数据文件")
+            return {}
+    return {}
 
+# 保存数据
 def save_data(data):
-    """保存数据"""
-    try:
-        with open(f"{DATA_DIR}/app_data.json", 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        logger.info("数据保存成功")
-        return True
-    except Exception as e:
-        logger.error(f"保存数据失败: {str(e)}")
-        return False
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-def merge_data(server_data, client_data, client_time):
-    """合并服务器和客户端数据"""
-    # 如果服务器没有数据，直接使用客户端数据
-    if not server_data:
-        logger.info("服务器没有数据，使用客户端数据")
-        return client_data, True
+# 合并数据（服务器数据和客户端数据）
+def merge_data(server_data, client_data):
+    merged = server_data.copy()
     
-    # 记录是否有更新
-    has_updates = False
-    merged_data = server_data.copy()
-    
-    # 遍历客户端数据
+    # 处理客户端数据
     for key, client_value in client_data.items():
-        # 如果是日期格式的key (任务数据)
-        if key.startswith('20') and len(key) == 10 and key[4] == '-' and key[7] == '-':
-            # 如果服务器没有这个日期的数据，或者客户端数据更新
-            if key not in server_data or (
-                client_value.get('submitTime', '') > server_data[key].get('submitTime', '')
-            ):
-                merged_data[key] = client_value
-                has_updates = True
-                logger.info(f"更新任务数据: {key}")
-        # 如果是系统设置
-        elif key == 'system_settings':
-            # 合并设置，但保留服务器上的同步密码
-            if 'system_settings' not in server_data:
-                server_data['system_settings'] = {}
+        # 跳过密码同步
+        if key == 'settings_password':
+            continue
             
-            merged_settings = server_data['system_settings'].copy()
-            for setting_key, setting_value in client_value.items():
-                # 不覆盖同步密码
-                if setting_key != 'syncPassword':
-                    merged_settings[setting_key] = setting_value
-                    
-            merged_data['system_settings'] = merged_settings
-            has_updates = True
-            logger.info("更新系统设置")
+        # 如果是日期格式的键（任务数据）
+        import re
+        if re.match(r'^\d{4}-\d{2}-\d{2}'):
+            # 检查是否服务器有这个日期的数据
+            if key in merged:
+                server_value = merged[key]
+                # 如果客户端数据更新（有提交时间并且比服务器的新），或者服务器没有提交时间
+                if ('submitTime' in client_value and 
+                    ('submitTime' not in server_value or 
+                     client_value['submitTime'] > server_value['submitTime'])):
+                    merged[key] = client_value
+            else:
+                # 服务器没有这个日期的数据，直接添加
+                merged[key] = client_value
+        else:
+            # 非日期键（如系统设置等）
+            merged[key] = client_value
     
-    return merged_data, has_updates
+    return merged
 
 @app.route('/sync', methods=['POST'])
-def sync():
-    """处理同步请求"""
-    # 验证密码
-    client_password = request.headers.get('X-Sync-Password', '')
-    if client_password != SYNC_PASSWORD:
-        logger.warning("同步密码验证失败")
-        return jsonify({"success": False, "message": "密码验证失败"})
-    
+def sync_data():
     try:
-        # 解析请求数据
-        request_data = request.json
-        if not request_data:
-            return jsonify({"success": False, "message": "无效的请求数据"})
-        
-        client_data = request_data.get('data', {})
-        client_time = request_data.get('clientTime', '')
-        action = request_data.get('action', '')
-        
-        if action != 'sync':
-            return jsonify({"success": False, "message": "不支持的操作"})
-        
-        # 备份当前数据
+        # 备份现有数据
         backup_data()
         
-        # 读取服务器数据
-        server_data = read_data()
+        # 加载服务器数据
+        server_data = load_data()
+        
+        # 获取客户端数据
+        client_payload = request.json
+        if not client_payload or 'data' not in client_payload:
+            return jsonify({'success': False, 'message': '无效的数据格式'})
+        
+        client_data = client_payload['data']
+        client_timestamp = client_payload.get('timestamp', '')
+        
+        log_message(f"收到来自设备 {client_payload.get('deviceId', 'unknown')} 的同步请求")
         
         # 合并数据
-        merged_data, has_updates = merge_data(server_data, client_data, client_time)
+        merged_data = {}
+        
+        # 遍历所有键，选择最新的数据
+        all_keys = set(list(server_data.keys()) + list(client_data.keys()))
+        
+        for key in all_keys:
+            # 跳过设置密码的同步
+            if key == 'settings_password':
+                continue
+                
+            server_value = server_data.get(key)
+            client_value = client_data.get(key)
+            
+            # 如果是日期格式的键（可能是任务数据）
+            if key.startswith('20') and len(key) == 10 and key[4] == '-' and key[7] == '-':
+                # 如果两边都有数据
+                if server_value and client_value:
+                    # 检查提交状态和时间戳
+                    server_submitted = server_value.get('submitted', False)
+                    client_submitted = client_value.get('submitted', False)
+                    
+                    server_time = server_value.get('submitTime', '')
+                    client_time = client_value.get('submitTime', '')
+                    
+                    # 如果客户端已提交，服务器未提交，使用客户端数据
+                    if client_submitted and not server_submitted:
+                        merged_data[key] = client_value
+                    # 如果服务器已提交，客户端未提交，使用服务器数据
+                    elif server_submitted and not client_submitted:
+                        merged_data[key] = server_value
+                    # 两边都已提交，使用时间戳较新的
+                    elif server_submitted and client_submitted:
+                        if client_time > server_time:
+                            merged_data[key] = client_value
+                        else:
+                            merged_data[key] = server_value
+                    else:
+                        # 两边都未提交，合并题目数据
+                        merged_data[key] = client_value if client_value.get('questions') else server_value
+                elif server_value:
+                    merged_data[key] = server_value
+                else:
+                    merged_data[key] = client_value
+            else:
+                # 对于非日期键（如系统设置），使用客户端最新的数据
+                if client_value is not None:
+                    merged_data[key] = client_value
+                elif server_value is not None:
+                    merged_data[key] = server_value
+        
+        # 处理特殊的密码字段
+        server_password = server_data.get('settings_password')
         
         # 保存合并后的数据
-        if has_updates:
-            save_data(merged_data)
+        save_data(merged_data)
         
-        # 返回结果
-        if has_updates:
-            return jsonify({
-                "success": True,
-                "message": "同步成功",
-                "data": merged_data,
-                "serverTime": datetime.now().isoformat()
-            })
-        else:
-            return jsonify({
-                "success": True,
-                "message": "同步成功，无更新",
-                "serverTime": datetime.now().isoformat()
-            })
+        log_message("数据同步成功")
+        
+        # 返回成功与合并后的数据
+        response_data = {
+            'success': True,
+            'data': merged_data
+        }
+        
+        # 如果服务器有密码设置，一并返回
+        if server_password:
+            response_data['password'] = server_password
             
+        return jsonify(response_data)
+    
     except Exception as e:
-        logger.error(f"同步处理错误: {str(e)}")
-        return jsonify({"success": False, "message": f"服务器错误: {str(e)}"})
-
-@app.route('/')
-def index():
-    return "AI出题打卡同步服务器正在运行"
+        log_message(f"同步过程中出错: {str(e)}")
+        return jsonify({'success': False, 'message': f'服务器错误: {str(e)}'})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
