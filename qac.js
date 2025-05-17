@@ -686,7 +686,43 @@ function loadSettings() {
     document.getElementById('apiModel').value = settings.apiModel || 'gpt-3.5-turbo';
     document.getElementById('apiUrl').value = settings.apiUrl || '';
     document.getElementById('apiKey').value = settings.apiKey || '';
-    document.getElementById('apiPrompt').value = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
+    document.getElementById('apiPrompt').value = settings.apiPrompt ||
+`请为一个小学五年级的学生提供每日打卡的题目，内容是关于语文常识，古文，诗词和国学。
+要求如下：
+1. 生成2个选择题和1个填空题。
+2. 选择题有4到6个备选答案，一个正确答案。
+3. 填空题尽可能让答案是明确和唯一的，避免主观题导致不容易判断回答对错。
+4. 每道题包括以下信息：
+      a. 问题
+      b. 答案
+   c. 提示 
+      d. 解题思路
+5. 提示可以帮助用户解答题目，但是要避免直接透露答案本身。
+6. 解题思路可以帮助用户理解答案，提高解决类似题目的能力。
+7. 所有题目的信息用JSON格式返回。例如：
+[
+    {
+        "id": 1,
+        "type": "select",
+        "question": "一星期有几天？",
+        "options": ["1", "2", "7", "6"],
+        "answer": "7",
+        "hint": "查看下日历",
+        "thinking": "这是一个关于日期的简单选择题，可以通过查看日历了解。"
+    },
+    {
+        "id": 2,
+        "type": "input",
+        "question": "一年有几个月？（请用阿拉伯数字回答）",
+        "answer": "12",
+        "hint": "一年有365天，一个月大概有30天。",
+        "thinking": "这是一个关于日期的简单选择题，可以通过查看日历了解。"
+    }
+]
+8. 确保返回正确的json并且可以被Python json.loads方法解析.
+
+请生成题目:
+`;
     document.getElementById('syncUrl').value = settings.syncUrl || '';
     document.getElementById('debugMode').checked = settings.debugMode || false;
     
@@ -782,8 +818,8 @@ async function fetchQuestions(date) {
         toggleLoading(true, '正在从API获取题目...');
         
         // 构建API请求
-        const prompt = settings.apiPrompt || '生成5道中文题目，包含选择题和填空题，难度适中。每道题都需要包含题目、答案、提示和思考过程。';
-        const model = settings.apiModel || 'gpt-3.5-turbo';
+        const prompt = settings.apiPrompt;
+        const model = settings.apiModel;
         
         // 根据不同的模型构建不同的请求
         let requestBody;
@@ -795,12 +831,8 @@ async function fetchQuestions(date) {
                 input: {
                     messages: [
                         {
-                            role: "system",
-                            content: "你是一个教育助手，擅长出题。"
-                        },
-                        {
                             role: "user",
-                            content: `日期: ${formatDateKey(date)}\n${prompt}`
+                            content: `${prompt}`
                         }
                     ]
                 },
@@ -814,12 +846,8 @@ async function fetchQuestions(date) {
                 model: model,
                 messages: [
                     {
-                        role: "system",
-                        content: "你是一个教育助手，擅长出题。"
-                    },
-                    {
                         role: "user",
-                        content: `日期: ${formatDateKey(date)}\n${prompt}`
+                        content: `${prompt}`
                     }
                 ],
                 temperature: 0.7
@@ -846,21 +874,16 @@ async function fetchQuestions(date) {
         });
         
         if (!response.ok) {
-            throw new Error(`API错误: ${response.status}`);
+            throw new Error(`API错误: ${response.status}\nURL:${settings.apiUrl}\nrequestBody:${requestBody}`);
         }
         
         const data = await response.json();
-        
-        // 解析不同模型返回的数据格式
-        let content;
-        if (model.startsWith('qwen')) {
-            content = data.output.text;
-        } else {
-            content = data.choices[0].message.content;
-        }
-        
         // 解析返回的内容，转换为题目格式
-        const questions = parseQuestions(content);
+
+        const questions = extractAndParseJSON(data.choices[0].message.content)
+        if (!questions) {
+            throw new Error(`questions错误: prompt:${prompt}, resp: ${data.choices[0].message.content}`);
+        }
         
         // 存储题目到本地
         const record = storage.get(dateKey) || { submitted: false };
@@ -877,7 +900,7 @@ async function fetchQuestions(date) {
         // 隐藏加载指示器
         toggleLoading(false);
         // 出错时使用默认题目
-        return getDefaultQuestions(date);
+        throw new Error(`API请求失败: ${e.message}`)
     }
 }
 

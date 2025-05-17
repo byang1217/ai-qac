@@ -22,6 +22,7 @@
     <button onclick="runDebug()">运行API测试</button>
     <div id="debugOutput"></div>
 
+<script src="../utils.js?v=0.01"></script>
 <script>
 // 调试专用函数
 async function simpleLLM() {
@@ -40,7 +41,44 @@ async function simpleLLM() {
                 model: apiModel,
                 messages: [{
                     role: "user",
-                    content: "生成一个测试问题，包含答案和解析"
+                    content: 
+`
+请为一个小学五年级的学生提供每日打卡的题目，内容是关于语文常识，古文，诗词和国学。
+要求如下：
+1. 生成2个选择题和1个填空题。
+2. 选择题有4到6个备选答案，一个正确答案。
+3. 填空题尽可能让答案是明确和唯一的，避免主观题导致不容易判断回答对错。
+4. 每道题包括以下信息：
+      a. 问题
+      b. 答案
+   c. 提示 
+      d. 解题思路
+5. 提示可以帮助用户解答题目，但是要避免直接透露答案本身。
+6. 解题思路可以帮助用户理解答案，提高解决类似题目的能力。
+7. 所有题目的信息用JSON格式返回。例如：
+[
+    {
+        "id": 1,
+        "type": "select",
+        "question": "一星期有几天？",
+        "options": ["1", "2", "7", "6"],
+        "answer": "7",
+        "hint": "查看下日历",
+        "thinking": "这是一个关于日期的简单选择题，可以通过查看日历了解。"
+    },
+    {
+        "id": 2,
+        "type": "input",
+        "question": "一年有几个月？（请用阿拉伯数字回答）",
+        "answer": "12",
+        "hint": "一年有365天，一个月大概有30天。",
+        "thinking": "这是一个关于日期的简单选择题，可以通过查看日历了解。"
+    }
+]
+8. 确保返回正确的json并且可以被Python json.loads方法解析.
+
+请生成题目:
+`
                 }],
                 temperature: 0.7
             })
@@ -72,9 +110,12 @@ async function runDebug() {
         const result = await simpleLLM();
         const duration = Date.now() - startTime;
 
+        const jsonData = extractAndParseJSON(result.choices[0].message.content)
+
         // 控制台打印
         console.log('API耗时:', duration + 'ms');
         console.log('完整响应数据:', result);
+        console.log('jsonData:', jsonData);
 
         // 可视化显示
         output.innerHTML = `
@@ -83,6 +124,9 @@ async function runDebug() {
             <div>ID: ${result.id}</div>
             <div>回复内容: 
                 ${result.choices[0].message.content}
+            </div>
+            <div>jsonData: 
+                ${jsonData}
             </div>
             <details>
                 <summary>完整响应数据</summary>
