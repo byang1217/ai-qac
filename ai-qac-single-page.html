@@ -1109,7 +1109,7 @@ function updateApiUrlBasedOnModel(model) {
             urlField.value = 'https://api.deepseek.com/v1/chat/completions';
             break;
         case 'qwen-max':
-            urlField.value = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation';
+            urlField.value = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
             break;
         case 'custom':
             // 如果是自定义模型，不自动填充URL
@@ -1317,36 +1317,18 @@ async function fetchQuestions(date) {
         // 根据不同的模型构建不同的请求
         let requestBody;
         
-        if (model.startsWith('qwen')) {
-            // 阿里云千问模型请求格式
-            requestBody = JSON.stringify({
-                model: model,
-                input: {
-                    messages: [
-                        {
-                            role: "user",
-                            content: `${prompt}`
-                        }
-                    ]
-                },
-                parameters: {
-                    temperature: 0.7
+        // OpenAI、DeepSeek等模型请求格式
+        requestBody = JSON.stringify({
+            model: model,
+            messages: [
+                {
+                    role: "user",
+                    content: `${prompt}`
                 }
-            });
-        } else {
-            // OpenAI、DeepSeek等模型请求格式
-            requestBody = JSON.stringify({
-                model: model,
-                messages: [
-                    {
-                        role: "user",
-                        content: `${prompt}`
-                    }
-                ],
-                temperature: 0.7
-            });
-        }
-        
+            ],
+            temperature: 0.7
+        });
+    
         // 添加不同模型的认证头
         let headers = {
             'Content-Type': 'application/json'
